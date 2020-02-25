@@ -5,29 +5,63 @@
     {
       "type": "object",
       "required": [
-        "increment"
+        "believe"
       ],
       "properties": {
-        "increment": {
-          "type": "object"
+        "believe": {
+          "type": "object",
+          "required": [
+            "github",
+            "keybase",
+            "nickname"
+          ],
+          "properties": {
+            "github": {
+              "type": "string"
+            },
+            "keybase": {
+              "type": "string"
+            },
+            "nickname": {
+              "type": "string"
+            }
+          }
         }
       }
     },
     {
       "type": "object",
       "required": [
-        "reset"
+        "bless"
       ],
       "properties": {
-        "reset": {
+        "bless": {
           "type": "object",
           "required": [
-            "count"
+            "nickname"
           ],
           "properties": {
-            "count": {
-              "type": "integer",
-              "format": "int32"
+            "nickname": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "unbless"
+      ],
+      "properties": {
+        "unbless": {
+          "type": "object",
+          "required": [
+            "nickname"
+          ],
+          "properties": {
+            "nickname": {
+              "type": "string"
             }
           }
         }

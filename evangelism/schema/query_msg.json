@@ -5,10 +5,29 @@
     {
       "type": "object",
       "required": [
-        "getcount"
+        "resolveevangelist"
       ],
       "properties": {
-        "getcount": {
+        "resolveevangelist": {
+          "type": "object",
+          "required": [
+            "nickname"
+          ],
+          "properties": {
+            "nickname": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "config"
+      ],
+      "properties": {
+        "config": {
           "type": "object"
         }
       }

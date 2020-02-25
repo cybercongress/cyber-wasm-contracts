@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ResolveEvangelistResponse",
+  "type": "object",
+  "required": [
+    "accepted",
+    "cyber",
+    "github",
+    "keybase",
+    "nickname"
+  ],
+  "properties": {
+    "accepted": {
+      "type": "boolean"
+    },
+    "cyber": {
+      "$ref": "#/definitions/HumanAddr"
+    },
+    "github": {
+      "type": "string"
+    },
+    "keybase": {
+      "type": "string"
+    },
+    "nickname": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "HumanAddr": {
+      "type": "string"
+    }
+  }
+}

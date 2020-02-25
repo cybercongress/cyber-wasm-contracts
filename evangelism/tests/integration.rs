@@ -1,10 +1,12 @@
-use cosmwasm::mock::mock_params;
-use cosmwasm::serde::from_slice;
-use cosmwasm::types::{coin, ContractResult};
-
+use cosmwasm::mock::{mock_params, MockApi, MockStorage};
+use cosmwasm::traits::Api;
+use cosmwasm::types::HumanAddr;
+use cosmwasm_vm::Instance;
 use cosmwasm_vm::testing::{handle, init, mock_instance, query};
+use cw_storage::deserialize;
 
-use evangelism::msg::{CountResponse, HandleMsg, InitMsg, QueryMsg};
+use evangelism::msg::{HandleMsg, InitMsg, QueryMsg, ResolveEvangelistResponse};
+use evangelism::state::State;
 
 /**
 This integration test tries to run and call the generated wasm.
@@ -48,76 +50,110 @@ static WASM: &[u8] = include_bytes!("../target/wasm32-unknown-unknown/release/ev
 // You can uncomment this line instead to test productionified build from cosmwasm-opt
 // static WASM: &[u8] = include_bytes!("../contract.wasm");
 
-#[test]
-fn proper_initialization() {
-    let mut deps = mock_instance(WASM);
+fn assert_evangelist_record(mut deps: &mut Instance<MockStorage, MockApi>, cyber: &str, nickname: &str, accepted: bool) {
+    let res = query(
+        &mut deps,
+        QueryMsg::ResolveEvangelist {
+            nickname: nickname.to_string(),
+        },
+    )
+        .unwrap();
 
-    let msg = InitMsg { count: 17 };
-    let params = mock_params(&deps.api, "creator", &coin("1000", "earth"), &[]);
+    let value: ResolveEvangelistResponse = deserialize(&res).unwrap();
+    assert_eq!(HumanAddr::from(cyber), value.cyber);
+    assert_eq!(nickname, value.nickname);
+    assert_eq!(accepted, value.accepted);
+}
 
-    // we can just call .unwrap() to assert this was a success
-    let res = init(&mut deps, params, msg).unwrap();
-    assert_eq!(0, res.messages.len());
+fn assert_config_state(mut deps: &mut Instance<MockStorage, MockApi>, expected: State) {
+    let res = query(&mut deps, QueryMsg::Config {}).unwrap();
+    let value: State = deserialize(&res).unwrap();
+    assert_eq!(value, expected);
+}
 
-    // it worked, let's query the state
-    let res = query(&mut deps, QueryMsg::GetCount {}).unwrap();
-    let value: CountResponse = from_slice(&res).unwrap();
-    assert_eq!(17, value.count);
+fn mock_init(
+    mut deps: &mut Instance<MockStorage, MockApi>,
+) {
+    let msg = InitMsg { };
+    let params = mock_params(&deps.api, "creator", &[], &[]);
+    let _res = init(&mut deps, params, msg).unwrap();
+}
+
+fn mock_evangelist_believe(
+    mut deps: &mut Instance<MockStorage, MockApi>,
+) {
+    let params = mock_params(&deps.api, "alice", &[], &[]);
+    let msg = HandleMsg::Believe {
+        nickname: "alice_nickname".to_string(),
+        keybase: "alice_keybase".to_string(),
+        github:   "alice_github".to_string(),
+    };
+    let _res =
+        handle(&mut deps, params, msg).unwrap();
+}
+
+fn mock_creator_bless(
+    mut deps: &mut Instance<MockStorage, MockApi>,
+) {
+    let params = mock_params(&deps.api, "creator", &[], &[]);
+    let msg = HandleMsg::Bless {
+        nickname: "alice_nickname".to_string(),
+    };
+    let _res =
+        handle(&mut deps, params, msg).unwrap();
+}
+
+fn mock_creator_unbless(
+    mut deps: &mut Instance<MockStorage, MockApi>,
+) {
+    let params = mock_params(&deps.api, "creator", &[], &[]);
+    let msg = HandleMsg::Unbless {
+        nickname: "alice_nickname".to_string(),
+    };
+    let _res =
+        handle(&mut deps, params, msg).unwrap();
 }
 
 #[test]
-fn increment() {
+fn proper_init() {
     let mut deps = mock_instance(WASM);
+    mock_init(&mut deps);
+    let expected_owner = deps.api.canonical_address(&HumanAddr("creator".to_string())).unwrap();
 
-    let msg = InitMsg { count: 17 };
-    let params = mock_params(
-        &deps.api,
-        "creator",
-        &coin("2", "token"),
-        &coin("2", "token"),
-    );
-    let _res = init(&mut deps, params, msg).unwrap();
-
-    // beneficiary can release it
-    let params = mock_params(&deps.api, "anyone", &coin("2", "token"), &[]);
-    let msg = HandleMsg::Increment {};
-    let _res = handle(&mut deps, params, msg).unwrap();
-
-    // should increase counter by 1
-    let res = query(&mut deps, QueryMsg::GetCount {}).unwrap();
-    let value: CountResponse = from_slice(&res).unwrap();
-    assert_eq!(18, value.count);
+    assert_config_state(
+        &mut deps,
+        State {
+            owner:  expected_owner
+        }
+    )
 }
 
 #[test]
-fn reset() {
+fn proper_evangelist_believe() {
     let mut deps = mock_instance(WASM);
+    mock_init(&mut deps);
+    mock_evangelist_believe(&mut deps);
 
-    let msg = InitMsg { count: 17 };
-    let params = mock_params(
-        &deps.api,
-        "creator",
-        &coin("2", "token"),
-        &coin("2", "token"),
-    );
-    let _res = init(&mut deps, params, msg).unwrap();
+    assert_evangelist_record(&mut deps, "alice", "alice_nickname", false);
+}
 
-    // beneficiary can release it
-    let unauth_params = mock_params(&deps.api, "anyone", &coin("2", "token"), &[]);
-    let msg = HandleMsg::Reset { count: 5 };
-    let res = handle(&mut deps, unauth_params, msg);
-    match res {
-        ContractResult::Err(msg) => assert_eq!(msg, "Unauthorized"),
-        _ => panic!("Expected error"),
-    }
+#[test]
+fn proper_creator_bless() {
+    let mut deps = mock_instance(WASM);
+    mock_init(&mut deps);
+    mock_evangelist_believe(&mut deps);
+    mock_creator_bless(&mut deps);
 
-    // only the original creator can reset the counter
-    let auth_params = mock_params(&deps.api, "creator", &coin("2", "token"), &[]);
-    let msg = HandleMsg::Reset { count: 5 };
-    let _res = handle(&mut deps, auth_params, msg).unwrap();
+    assert_evangelist_record(&mut deps, "alice", "alice_nickname", true);
+}
 
-    // should now be 5
-    let res = query(&mut deps, QueryMsg::GetCount {}).unwrap();
-    let value: CountResponse = from_slice(&res).unwrap();
-    assert_eq!(5, value.count);
+#[test]
+fn proper_creator_unbless() {
+    let mut deps = mock_instance(WASM);
+    mock_init(&mut deps);
+    mock_evangelist_believe(&mut deps);
+    mock_creator_bless(&mut deps);
+    mock_creator_unbless(&mut deps);
+
+    assert_evangelist_record(&mut deps, "alice", "alice_nickname", false);
 }

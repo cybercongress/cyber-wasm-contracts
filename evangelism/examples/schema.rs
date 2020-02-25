@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use schemars::{schema::RootSchema, schema_for};
 
-use evangelism::msg::{CountResponse, HandleMsg, InitMsg, QueryMsg};
+use evangelism::msg::{ResolveEvangelistResponse, HandleMsg, InitMsg, QueryMsg};
 use evangelism::state::State;
 
 fn main() {
@@ -24,8 +24,8 @@ fn main() {
     let schema = schema_for!(State);
     export_schema(&schema, &pwd, "state.json");
 
-    let schema = schema_for!(CountResponse);
-    export_schema(&schema, &pwd, "count_response.json");
+    let schema = schema_for!(ResolveEvangelistResponse);
+    export_schema(&schema, &pwd, "evangelist_response.json");
 }
 
 // panics if any error writing out the schema
