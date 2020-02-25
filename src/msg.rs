@@ -12,6 +12,7 @@ pub struct InitMsg { }
 pub enum HandleMsg {
     Believe { nickname: String, telegram: String, github: String },
     Bless { nickname: String },
+    Unbless { nickname: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

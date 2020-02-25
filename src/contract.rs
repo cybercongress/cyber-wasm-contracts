@@ -29,6 +29,7 @@ pub fn handle<S: Storage, A: Api>(
     match msg {
         HandleMsg::Believe { nickname, telegram, github} => try_believe(deps, params, nickname, telegram, github),
         HandleMsg::Bless { nickname } => try_bless(deps, params, nickname),
+        HandleMsg::Unbless { nickname } => try_unbless(deps, params, nickname),
     }
 }
 
@@ -73,6 +74,27 @@ pub fn try_bless<S: Storage, A: Api>(
 
        record.accepted = true;
        Ok(record)
+    });
+
+    Ok(Response::default())
+}
+
+pub fn try_unbless<S: Storage, A: Api>(
+    deps: &mut Extern<S, A>,
+    params: Params,
+    nickname: String,
+) -> Result<Response> {
+    let config_state = config(&mut deps.storage).load()?;
+
+    let key = nickname.as_bytes();
+
+    resolver(&mut deps.storage).update(key, &|mut record| {
+        if params.message.signer != config_state.owner {
+            unauthorized()?;
+        }
+
+        record.accepted = false;
+        Ok(record)
     });
 
     Ok(Response::default())
@@ -150,7 +172,7 @@ mod tests {
             handle(&mut deps, params, msg).expect("contract successfully handles Believe message");
     }
 
-    fn mock_creator_trust(
+    fn mock_creator_bless(
         mut deps: &mut Extern<MockStorage, MockApi>,
     ) {
         let params = mock_params(&deps.api, "creator", &[], &[]);
@@ -158,7 +180,18 @@ mod tests {
             nickname: "alice_nickname".to_string(),
         };
         let _res =
-            handle(&mut deps, params, msg).expect("contract successfully handles Trust message");
+            handle(&mut deps, params, msg).expect("contract successfully handles Bless message");
+    }
+
+    fn mock_creator_unbless(
+        mut deps: &mut Extern<MockStorage, MockApi>,
+    ) {
+        let params = mock_params(&deps.api, "creator", &[], &[]);
+        let msg = HandleMsg::Unbless {
+            nickname: "alice_nickname".to_string(),
+        };
+        let _res =
+            handle(&mut deps, params, msg).expect("contract successfully handles Unbless message");
     }
 
     #[test]
@@ -185,12 +218,22 @@ mod tests {
     }
 
     #[test]
-    fn proper_evangelist_bless() {
+    fn proper_creator_bless() {
         let mut deps = dependencies(20);
         mock_init(&mut deps);
         mock_evangelist_believe(&mut deps);
-        mock_creator_trust(&mut deps);
+        mock_creator_bless(&mut deps);
 
         assert_evangelist_record(&mut deps, "alice", "alice_nickname", true);
+    }
+
+    fn proper_creator_unbless() {
+        let mut deps = dependencies(20);
+        mock_init(&mut deps);
+        mock_evangelist_believe(&mut deps);
+        mock_creator_bless(&mut deps);
+        mock_creator_unbless(&mut deps);
+
+        assert_evangelist_record(&mut deps, "alice", "alice_nickname", false);
     }
 }
