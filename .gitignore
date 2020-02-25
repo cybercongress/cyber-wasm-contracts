@@ -1,4 +1,6 @@
 /target
 **/*.rs.bk
 *.iml
-.idea
+evangelism/.idea
+.DS_Store
+
