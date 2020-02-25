@@ -30,7 +30,7 @@ pub fn config_read<S: ReadonlyStorage>(storage: &S) -> ReadonlySingleton<S, Stat
 pub struct EvangelistRecord {
     pub cyber: CanonicalAddr,
     pub nickname: String,
-    pub telegram: String,
+    pub keybase: String,
     pub github: String,
     pub accepted: bool,
 }

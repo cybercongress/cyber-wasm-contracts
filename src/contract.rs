@@ -27,7 +27,7 @@ pub fn handle<S: Storage, A: Api>(
     msg: HandleMsg,
 ) -> Result<Response> {
     match msg {
-        HandleMsg::Believe { nickname, telegram, github} => try_believe(deps, params, nickname, telegram, github),
+        HandleMsg::Believe { nickname, keybase, github} => try_believe(deps, params, nickname, keybase, github),
         HandleMsg::Bless { nickname } => try_bless(deps, params, nickname),
         HandleMsg::Unbless { nickname } => try_unbless(deps, params, nickname),
     }
@@ -37,14 +37,14 @@ pub fn try_believe<S: Storage, A: Api>(
     deps: &mut Extern<S, A>,
     params: Params,
     nickname: String,
-    telegram: String,
+    keybase: String,
     github: String,
 ) -> Result<Response> {
     let key = nickname.as_bytes();
     let record = EvangelistRecord {
         cyber: params.message.signer,
         nickname: nickname.clone(),
-        telegram,
+        keybase,
         github,
         accepted: false,
     };
@@ -115,7 +115,7 @@ fn query_resolver<S: Storage, A: Api>(deps: &Extern<S, A>, nickname: String) -> 
     let resp = ResolveEvangelistResponse {
         cyber: address,
         nickname: record.nickname,
-        telegram: record.telegram,
+        keybase: record.keybase,
         github: record.github,
         accepted: record.accepted,
     };
@@ -165,7 +165,7 @@ mod tests {
         let params = mock_params(&deps.api, "alice", &[], &[]);
         let msg = HandleMsg::Believe {
             nickname: "alice_nickname".to_string(),
-            telegram: "alice_telegram".to_string(),
+            keybase: "alice_keybase".to_string(),
             github:   "alice_github".to_string(),
         };
         let _res =

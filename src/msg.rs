@@ -10,7 +10,7 @@ pub struct InitMsg { }
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum HandleMsg {
-    Believe { nickname: String, telegram: String, github: String },
+    Believe { nickname: String, keybase: String, github: String },
     Bless { nickname: String },
     Unbless { nickname: String },
 }
@@ -27,7 +27,7 @@ pub enum QueryMsg {
 pub struct ResolveEvangelistResponse{
     pub cyber: HumanAddr,
     pub nickname: String,
-    pub telegram: String,
+    pub keybase: String,
     pub github: String,
     pub accepted: bool,
 }
