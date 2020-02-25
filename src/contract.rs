@@ -1,20 +1,18 @@
-use snafu::ResultExt;
-
-use cosmwasm::errors::{Result, SerializeErr, Unauthorized};
-use cosmwasm::serde::to_vec;
+use cosmwasm::errors::{Result, unauthorized, contract_err};
 use cosmwasm::traits::{Api, Extern, Storage};
-use cosmwasm::types::{Params, Response};
+use cosmwasm::types::{CanonicalAddr, Params, Response};
 
-use crate::msg::{CountResponse, HandleMsg, InitMsg, QueryMsg};
-use crate::state::{config, config_read, State};
+use crate::msg::{HandleMsg, InitMsg, QueryMsg, ResolveEvangelistResponse};
+use crate::state::{config, config_read, resolver, resolver_read, State, EvangelistRecord};
+
+use cw_storage::{ serialize, deserialize };
 
 pub fn init<S: Storage, A: Api>(
     deps: &mut Extern<S, A>,
     params: Params,
-    msg: InitMsg,
+    _msg: InitMsg,
 ) -> Result<Response> {
     let state = State {
-        count: msg.count,
         owner: params.message.signer,
     };
 
@@ -29,133 +27,170 @@ pub fn handle<S: Storage, A: Api>(
     msg: HandleMsg,
 ) -> Result<Response> {
     match msg {
-        HandleMsg::Increment {} => try_increment(deps, params),
-        HandleMsg::Reset { count } => try_reset(deps, params, count),
+        HandleMsg::Believe { nickname, telegram, github} => try_believe(deps, params, nickname, telegram, github),
+        HandleMsg::Bless { nickname } => try_bless(deps, params, nickname),
     }
 }
 
-pub fn try_increment<S: Storage, A: Api>(
+pub fn try_believe<S: Storage, A: Api>(
     deps: &mut Extern<S, A>,
-    _params: Params,
+    params: Params,
+    nickname: String,
+    telegram: String,
+    github: String,
 ) -> Result<Response> {
-    config(&mut deps.storage).update(&|mut state| {
-        state.count += 1;
-        Ok(state)
-    })?;
+    let key = nickname.as_bytes();
+    let record = EvangelistRecord {
+        cyber: params.message.signer,
+        nickname: nickname.clone(),
+        telegram,
+        github,
+        accepted: false,
+    };
+
+    if let None = resolver(&mut deps.storage).may_load(key)? {
+        resolver(&mut deps.storage).save(key, &record)?;
+    } else {
+        contract_err("Nickname is already taken")?;
+    }
 
     Ok(Response::default())
 }
 
-pub fn try_reset<S: Storage, A: Api>(
+pub fn try_bless<S: Storage, A: Api>(
     deps: &mut Extern<S, A>,
     params: Params,
-    count: i32,
+    nickname: String,
 ) -> Result<Response> {
-    config(&mut deps.storage).update(&|mut state| {
-        if params.message.signer != state.owner {
-            Unauthorized {}.fail()?;
-        }
+    let config_state = config(&mut deps.storage).load()?;
 
-        state.count = count;
-        Ok(state)
-    })?;
+    let key = nickname.as_bytes();
+
+    resolver(&mut deps.storage).update(key, &|mut record| {
+       if params.message.signer != config_state.owner {
+           unauthorized()?;
+       }
+
+       record.accepted = true;
+       Ok(record)
+    });
+
     Ok(Response::default())
 }
 
 pub fn query<S: Storage, A: Api>(deps: &Extern<S, A>, msg: QueryMsg) -> Result<Vec<u8>> {
     match msg {
-        QueryMsg::GetCount {} => query_count(deps),
+        QueryMsg::ResolveEvangelist { nickname } => query_resolver(deps, nickname),
+        QueryMsg::Config {} => serialize(&config_read(&deps.storage).load()?),
     }
 }
 
-fn query_count<S: Storage, A: Api>(deps: &Extern<S, A>) -> Result<Vec<u8>> {
-    let state = config_read(&deps.storage).load()?;
+fn query_resolver<S: Storage, A: Api>(deps: &Extern<S, A>, nickname: String) -> Result<Vec<u8>> {
+    let key = nickname.as_bytes();
+    let record = resolver_read(&deps.storage).load(key)?;
+    let address = deps.api.human_address(&record.cyber)?;
 
-    let resp = CountResponse { count: state.count };
-    to_vec(&resp).context(SerializeErr {
-        kind: "CountResponse",
-    })
+    let resp = ResolveEvangelistResponse {
+        cyber: address,
+        nickname: record.nickname,
+        telegram: record.telegram,
+        github: record.github,
+        accepted: record.accepted,
+    };
+
+    serialize(&resp)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmwasm::errors::Error;
-    use cosmwasm::mock::{dependencies, mock_params};
-    use cosmwasm::serde::from_slice;
-    use cosmwasm::types::coin;
+    use cosmwasm::mock::{dependencies, mock_params, MockStorage, MockApi};
+    use cosmwasm::types::HumanAddr;
+    use cosmwasm::traits::{Api};
 
-    #[test]
-    fn proper_initialization() {
-        let mut deps = dependencies(20);
+    fn assert_evangelist_record(deps: &mut Extern<MockStorage, MockApi>, cyber: &str, nickname: &str, accepted: bool) {
+        let res = query(
+            &deps,
+            QueryMsg::ResolveEvangelist {
+                nickname: nickname.to_string(),
+            },
+        )
+        .unwrap();
 
-        let msg = InitMsg { count: 17 };
-        let params = mock_params(&deps.api, "creator", &coin("1000", "earth"), &[]);
+        let value: ResolveEvangelistResponse = deserialize(&res).unwrap();
+        assert_eq!(HumanAddr::from(cyber), value.cyber);
+        assert_eq!(nickname, value.nickname);
+        assert_eq!(accepted, value.accepted);
+    }
 
-        // we can just call .unwrap() to assert this was a success
-        let res = init(&mut deps, params, msg).unwrap();
-        assert_eq!(0, res.messages.len());
+    fn assert_config_state(deps: &mut Extern<MockStorage, MockApi>, expected: State) {
+        let res = query(&deps, QueryMsg::Config {}).unwrap();
+        let value: State = deserialize(&res).unwrap();
+        assert_eq!(value, expected);
+    }
 
-        // it worked, let's query the state
-        let res = query(&deps, QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_slice(&res).unwrap();
-        assert_eq!(17, value.count);
+    fn mock_init(
+        mut deps: &mut Extern<MockStorage, MockApi>,
+    ) {
+        let msg = InitMsg { };
+        let params = mock_params(&deps.api, "creator", &[], &[]);
+        let _res = init(&mut deps, params, msg).expect("contract successfully handles InitMsg");
+    }
+
+    fn mock_evangelist_believe(
+        mut deps: &mut Extern<MockStorage, MockApi>,
+    ) {
+        let params = mock_params(&deps.api, "alice", &[], &[]);
+        let msg = HandleMsg::Believe {
+            nickname: "alice_nickname".to_string(),
+            telegram: "alice_telegram".to_string(),
+            github:   "alice_github".to_string(),
+        };
+        let _res =
+            handle(&mut deps, params, msg).expect("contract successfully handles Believe message");
+    }
+
+    fn mock_creator_trust(
+        mut deps: &mut Extern<MockStorage, MockApi>,
+    ) {
+        let params = mock_params(&deps.api, "creator", &[], &[]);
+        let msg = HandleMsg::Bless {
+            nickname: "alice_nickname".to_string(),
+        };
+        let _res =
+            handle(&mut deps, params, msg).expect("contract successfully handles Trust message");
     }
 
     #[test]
-    fn increment() {
+    fn proper_init() {
         let mut deps = dependencies(20);
+        mock_init(&mut deps);
+        let expected_owner = deps.api.canonical_address(&HumanAddr("creator".to_string())).unwrap();
 
-        let msg = InitMsg { count: 17 };
-        let params = mock_params(
-            &deps.api,
-            "creator",
-            &coin("2", "token"),
-            &coin("2", "token"),
-        );
-        let _res = init(&mut deps, params, msg).unwrap();
-
-        // beneficiary can release it
-        let params = mock_params(&deps.api, "anyone", &coin("2", "token"), &[]);
-        let msg = HandleMsg::Increment {};
-        let _res = handle(&mut deps, params, msg).unwrap();
-
-        // should increase counter by 1
-        let res = query(&deps, QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_slice(&res).unwrap();
-        assert_eq!(18, value.count);
+        assert_config_state(
+            &mut deps,
+            State {
+                owner:  expected_owner
+            }
+        )
     }
 
     #[test]
-    fn reset() {
+    fn proper_evangelist_believe() {
         let mut deps = dependencies(20);
+        mock_init(&mut deps);
+        mock_evangelist_believe(&mut deps);
 
-        let msg = InitMsg { count: 17 };
-        let params = mock_params(
-            &deps.api,
-            "creator",
-            &coin("2", "token"),
-            &coin("2", "token"),
-        );
-        let _res = init(&mut deps, params, msg).unwrap();
+        assert_evangelist_record(&mut deps, "alice", "alice_nickname", false);
+    }
 
-        // beneficiary can release it
-        let unauth_params = mock_params(&deps.api, "anyone", &coin("2", "token"), &[]);
-        let msg = HandleMsg::Reset { count: 5 };
-        let res = handle(&mut deps, unauth_params, msg);
-        match res {
-            Err(Error::Unauthorized { .. }) => {}
-            _ => panic!("Must return unauthorized error"),
-        }
+    #[test]
+    fn proper_evangelist_bless() {
+        let mut deps = dependencies(20);
+        mock_init(&mut deps);
+        mock_evangelist_believe(&mut deps);
+        mock_creator_trust(&mut deps);
 
-        // only the original creator can reset the counter
-        let auth_params = mock_params(&deps.api, "creator", &coin("2", "token"), &[]);
-        let msg = HandleMsg::Reset { count: 5 };
-        let _res = handle(&mut deps, auth_params, msg).unwrap();
-
-        // should now be 5
-        let res = query(&deps, QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_slice(&res).unwrap();
-        assert_eq!(5, value.count);
+        assert_evangelist_record(&mut deps, "alice", "alice_nickname", true);
     }
 }
